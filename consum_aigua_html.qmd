@@ -1,0 +1,1690 @@
+---
+title: El consum domèstic d'aigua a les zones de Catalunya. 
+subtitle: Una exploració interactiva de factors amb que pot estar relacionat
+author: Toni Salvadó Nayach
+date: last-modified
+format: 
+    html:
+     toc: true  # index_menu 
+     toc-title: Índex
+     code: true
+     echo: FALSE  # Include the source code in output 
+     warning: FALSE 
+     error: FALSE	
+     message: FALSE
+     embed-resources: TRUE
+     code-annotations: FALSE
+     page-layout: full
+     preview-links: auto 
+     grid:
+      margin-width: 450px # Redueix marges respecte al 200px per defecte 
+---
+
+```{r}
+library(tidyverse)
+library(sf)
+library(viridis)
+library(ggiraph)
+library(cowplot)
+library(gt)
+library(gtExtras)
+library(gtsummary)
+library(stargazer)
+library(performance)
+library(report)
+library(see)
+library(readxl)
+library(httr)
+library(renv)
+```
+
+## 1. Presentació del problema i el seu abordatge
+
+Aquest treball es presenta en format html per dues raons bàsiques:
+
+-   Acompanyar cada objecte (gràfics, mapes i taules ) amb el codi R que l'ha generat. En aquest sentit el sistema de tabs d'aquest format és molt útil. Moltes de les línies d'aquesta pestanya adjunta "Codi" estan comentades amb detalls que m'han semblant interessants tècnicament. El sistema és semblant a les notes a peu de pàgina però que apareixen al final de cada pestanya de codi. Les línies de programació a que fa referència cadascuna acaben amb un "\# \<numero\>"
+
+-   També s'ha intentat presentar les dades amb objectes interactius i facilitar-ne així l'exploració. S'ha fet amb tots els mapes i taules amb resultats, així com amb alguns gràfics.
+
+El document es presenta en un únic html autocontingut que no precisa d'altres arxius per a visualitzar-se des d'un navegador web. L'arxiu .qmd que l'ha generat tampoc precisa de datasets adjunts atès que tots es criden online des de la url dels repositoris que tot seguit explicarem. Aquesta recàrrega de dades es fa cada vegada que es renderitza l'arxiu .qmd. A banda de comoditat, aquest sistema permet actualitzar automàticament la informació a mesura que els proveïdors de dades van penjant noves anualitats (sempre que no en variïn la url, és clar)
+
+Se'ns planteja un exercici sobre l'aigua a Catalunya i els seus patrons del seu consum domèstic al territori. Bàsicament aquest serà el nostre tema d'anàlisi (VD) Plantejarem (a mode d'hipòtesis) cinc factors que el poden condicionar (VI) Amb tots ells seguirem una seqüència similar:
+
+-   Presentar el dataset que conté la variable amb que operativitzem cada dimensió d'anàlisi
+
+-   Presentar-ne una visualització exploratòria, normalment amb desglossament territorial en format mapa, si bé alguna variable es presentarà en format gràfic evolutiu
+
+-   Valorar (també gràficament) si cadascuna de les VI considerades té, efectivament, la incidència sobre la VD que hem formulat com a hipòtesi
+
+-   En els casos que aquesta aproximació gràfica sembli apuntar una hipòtesi fructífera, modelarem la relació amb una regressió
+
+Els indicadors utilitzats, les seves fonts i els repositoris es sintetitzen en el següent quadre:
+
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| Indicador i url on s'obté                                                                                                                                                                        | Territorialitat i temporalitat      | Font                                                                         |
++:================================================================================================================================================================================================:+:===================================:+:============================================================================:+
+| [Consum domèstic de la xarxa mesurat en litres/persona/dia](https://analisi.transparenciacatalunya.cat/Medi-Ambient/Consum-d-aigua-a-Catalunya-per-comarques/2gws-ubmt)                          | Comarca                             | Generalitat de Catalunya. Dpt. d'Acció Climàtica, Alimentació i Agenda Rural |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Anual                               |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| [Quantitat d'aigua als embassaments de les Conques Internes en % embassat](https://analisi.transparenciacatalunya.cat/Medi-Ambient/Quantitat-d-aigua-als-embassaments-de-les-Conques-/gn9e-3qhr) | Embassament on s'ha fet la mesura   | Generalitat de Catalunya. Dpt. d'Acció Climàtica, Alimentació i Agenda Rural |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Diària que hem transformat en anual |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| [Temperatura mitjana registrada pel observatoris](https://www.idescat.cat/indicadors/?id=aec&n=15192)                                                                                            | Comarca                             | Servei Meteorològic de Catalunya                                             |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Anual                               |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| [Precipitació total (mm) registrada pel observatoris](https://www.idescat.cat/indicadors/?id=aec&n=16342)                                                                                        | Comarca                             | Servei Meteorològic de Catalunya                                             |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Anual                               |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| [Renda familiar disponible bruta territorial per habitant en milers d'euros](https://www.idescat.cat/pub/?id=rfdbc)                                                                              | Comarca                             | IDESCAT                                                                      |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Anual                               |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+| [Preu de l'aigua per municipis. Total en €/m3](https://aca.gencat.cat/ca/laca/observatori-del-preu-de-laigua/Preu-per-municipis-i-evolucio/index.html)                                           | Municipal transformat en comarcal   | ACA a partir de dades municipals                                             |
+|                                                                                                                                                                                                  |                                     |                                                                              |
+|                                                                                                                                                                                                  | Anual                               |                                                                              |
++--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+-------------------------------------+------------------------------------------------------------------------------+
+
+## 2. Les geometries dels polígons comarcals
+
+Atès que volem representar moltes d'aquestes variables en mapes i la seva unitat territorial seran majoritàriament les comarques, la primera tasca serà obtenir els polígons que delimiten aquestes divisions administratives catalanes. Això ho fem des del [dataset "Límits administratius comarcals de Catalunya"](#0) del portal de Dades Obertes de la Generalitat. En concret la informació és al camp de georeferenciació que anomenen the_geom. El nostre url apunta al format d'exportació en GEOJSON atès que aquest descarrega directament un únic arxiu i no un .zip (com sí que fa el shapefile) i això ens estalvia descarregar, manipular i "transportar" en local aquest arxiu de polígons georeferenciats . Per a més detalls del procés de descàrrega, consultar el codi R en la pestanya de la dreta. En el petit mapa que segueix veiem que el procés de càrrega de polígons funciona correctament:
+
+::: panel-tabset
+## Objecte
+
+```{r}
+poligons_comarques <- st_read("https://analisi.transparenciacatalunya.cat/api/geospatial/aasi-gwnd?accessType=DOWNLOAD&method=export&format=GeoJSON") %>% 
+  st_transform(4326) %>% 
+  mutate(codicomar = as.numeric(codicomar))
+
+ggplot() +
+  geom_sf(data = poligons_comarques) +
+  coord_sf(crs = 4269) +
+  theme_void()
+```
+
+## Codi
+
+``` r
+poligons_comarques <- st_read("https://analisi.transparenciacatalunya.cat/api/geospatial/aasi-gwnd?accessType=DOWNLOAD&method=export&format=GeoJSON") %>% 
+  st_transform(4326) %>% # <1>
+  mutate(codicomar = as.numeric(codicomar))
+
+ggplot() + 
+  geom_sf(data = poligons_comarques) + 
+  coord_sf(crs = 4269) # <2>
+  theme_void() 
+```
+
+1.  Converteix l'arxiu GEOJSON descarregat perquè pugui ser llegit pel geom_sf()
+2.  Aquest sistema de referència de coordenades (CRS) atorga al mapa la "projecció" amb que solem visualitzar-los
+:::
+
+## 3. La VD: El consum domèstic d'aigua al territori
+
+Entrem ja a explorar (i en algun cas modelar) les variables presentades en el quadre anterior. Comencem per la nostra variable dependent, el consum domèstic d'aigua en litres/persona/dia a les comarques catalanes. El primer és descarregar i transformar els datasets amb el codi (recordem) consultable en la pestanya adjunta. Aquest dataset inclou també la població empadronada en cada comarca, dada que també carreguem perquè serà utilitzada posteriorment. Un cop fet això ens queda un dataframe que mostrarem tot seguit (i en cada pas equivalent) en el format de taula interactiva {gt}
+
+```{r}
+consum_com <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true", 
+    locale = locale(decimal_mark = ",", grouping_mark = ".")) %>% 
+              select(Any, `Codi comarca`, `Consum domèstic per càpita`, `Població`) %>% 
+              rename(Consum_dom_pc = `Consum domèstic per càpita`, codicomar = `Codi comarca`) 
+              # mutate(Població = as.integer(Població))
+```
+
+```{r}
+consum_com_polig <- left_join(consum_com, poligons_comarques, by = "codicomar") %>% 
+  filter(!is.na(nomcomar)) %>% 
+  select (-capcomar , -areac5000) 
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+consum_com %>%
+    gt() %>%
+    gt_color_rows(Consum_dom_pc:Població, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+consum_com <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true", # <1>
+    locale = locale(decimal_mark = ",", grouping_mark = ".")) %>% 
+              select(Any, `Codi comarca`, `Consum domèstic per càpita`, `Població`) %>% 
+              rename(Consum_dom_pc = `Consum domèstic per càpita`, codicomar = `Codi comarca`) 
+              # mutate(Població = as.integer(Població))
+
+consum_com_polig <- left_join(consum_com, poligons_comarques, by = "codicomar") %>% # <2>
+  filter(!is.na(nomcomar)) %>% 
+  select (-capcomar , -areac5000) 
+
+consum_com %>%
+    gt() %>%
+    gt_color_rows(Consum_dom_pc:Població, c("white", "#FE3D3D")) %>% # <3>
+    opt_interactive() # <4>
+```
+
+1.  Per a obtenir les url d'aquest portal: exporta -\> CSV -\> click botó dret del mouse -\> copia l'enllaç
+2.  Els joins dels datasets temàtics amb els dels polígons es fan, si és possible, amb un codi numèric com codicomar
+3.  Cel·les pintades en gradient segons valor entre mínim (blanc) i màxim (#FE3D3D)
+4.  Activa la interactivitat de la taula, per exemple la possibilitat de reordenar-la per columnes
+:::
+
+Un cop tenim les dades, pintarem el darrer any disponible (2022) tant en format mapa com en format gràfic. El paquet {ggiraph} ens permet no només veure el resultat de cada registre passant el punter de mouse per sobre sinó també interconnectar els dos objectes. Això ens facilita identificar a quina comarca pertany cada punt del gràfic i a l'inrevés. Més que analitzar els valors exactes, aquí el que ens interessa és il·lustrar gràficament les fortes disparitats territorials que té el consum domèstic d'aigua al nostre país (recordem: mesurat en litres/persona/dia)
+
+::: panel-tabset
+## Objecte
+
+```{r}
+consum_com_polig_2022 <- consum_com_polig %>%
+  filter(Any == 2022)
+
+grafic_consum_aigua2 <- consum_com_polig_2022 %>%
+  ggplot() +
+  geom_point_interactive(aes(
+      x = Consum_dom_pc,
+      y = reorder(nomcomar, Consum_dom_pc),
+      size = 0.5)) +
+   aes(
+      tooltip = Consum_dom_pc,
+      data_id = codicomar
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(consum_com_polig$Consum_dom_pc), linetype = "dashed", color = "red")
+
+mapa_consum_aigua2 <- consum_com_polig_2022 %>% 
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Consum_dom_pc)) +
+   aes(
+      tooltip = Consum_dom_pc,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(grafic_consum_aigua2, mapa_consum_aigua2)
+  )
+```
+
+## Codi
+
+``` r
+consum_com_polig_2022 <- consum_com_polig %>%
+  filter(Any == 2022)
+
+grafic_consum_aigua2 <- consum_com_polig_2022 %>%
+  ggplot() +
+  geom_point_interactive(aes(  # <1>
+      x = Consum_dom_pc,
+      y = reorder(nomcomar, Consum_dom_pc),
+      size = 0.5)) +
+   aes(
+      tooltip = Consum_dom_pc, # <2>
+      data_id = codicomar # <3>
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(consum_com_polig$Consum_dom_pc), linetype = "dashed", color = "red")
+
+mapa_consum_aigua2 <- consum_com_polig_2022 %>% 
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Consum_dom_pc)) +
+   aes(
+      tooltip = Consum_dom_pc,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(grafic_consum_aigua2, mapa_consum_aigua2)
+  )
+```
+
+1.  Per aconseguir objectes interactius, cal afegir \_interactive darrere les geoms de ggplot que els suporten
+2.  En un segon aes() posem els elements que interactuaran. El tooltip defineix quin camp es mostrarà al passar el mouse
+3.  Perquè diversos elements (gràfic i mapa, en aquest cas) es vinculin, han de tenir el mateix camp a data_id
+4.  La funció plot_grid del paquet {cowplot}, associada a ghiraph::girafe() són les que permeten aquesta interactivitat
+:::
+
+## 4. Les candidates a VI: els possibles factors explicatius
+
+Comencem aquí a explorar possibles explicacions de la desigual distribució territorial del consum domèstic d'aigua a Catalunya. Recordem la seqüència que abans hem explicat que seguiríem per a cadascuna: presentar el dataset que conté la possible VI, una visualització exploratòria, valorar gràficament la seva incidència sobre la VD que hem formulat com a hipòtesi i, en els casos que aquesta aproximació gràfica sembli apuntar una hipòtesi correcta, mirarem de modelar la relació en una regressió. La tria de la tècnica estadística, respon als següents criteris:
+
+-   Totes les variables són numèriques contínues
+
+-   No tenim prou evidència (ni empírica ni teòrica) que les nostres VI tinguin una relació causal unívoca amb la nostra VD. Parlarem, per tant, d'associació més que no pas de causalitat.
+
+## 4.1. Les reserves hídriques als pantans
+
+La primera hipòtesi que ens plantejarem és que tal vegada la demanda domèstica d'aigua tingui relació amb la seva abundància. Per a operativitzar aquesta idea agafaríem com a indicador els percentatges de reserves als embassaments.
+
+## 4.1.1. Descàrrega, transformacions i visualització de les dades per als pantans seleccionats
+
+Del ETL d'aquesta variable (veure codi adjunt) el més destacable és la transformació de les dades diàries en què originàriament venia el dataset a la seva mitjana anual que utilitzem aquí.
+
+```{r}
+reserves_dia <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/gn9e-3qhr/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Dia = col_date(format = "%m/%d/%Y")), locale = locale(grouping_mark = ".")) %>%
+    filter(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)",
+        "Embassament de Sau (Vilanova de Sau)", "Embassament de Susqueda (Osor)")) %>%
+    select(Dia, Estació, `Percentatge volum embassat (%)`) %>%
+    mutate(Any = as.numeric(format(as.Date(Dia), "%Y"))) %>%
+    drop_na()
+
+reserves_any <- reserves_dia %>%
+    group_by(Any, Estació) %>%
+    summarize(embassada_panta_pcnt = mean(`Percentatge volum embassat (%)`)) %>%
+    mutate(embassada_panta_pcnt = round(embassada_panta_pcnt, 1))
+```
+
+Aquí no farem una presentació cartogràfica (quin polígon usar per a un pantà?) sinó el següent gràfic evolutiu. S'hi veu que les reserves d'aigua (en %) oscil·len fins al 2.020, any en què s'inicia la sequera en la qual encara estem immersos. Per raons que explicarem tot seguit, es representen només cinc pantans.
+
+::: panel-tabset
+## Objecte
+
+```{r}
+grf_pantans_evolutiu <- reserves_any %>%
+    ggplot() + geom_line_interactive(aes(x = Any, y = embassada_panta_pcnt,
+    color = Estació)) + aes(tooltip = embassada_panta_pcnt, data_id = embassada_panta_pcnt) +
+    theme_minimal() + theme(legend.position = "bottom") + guides(color = guide_legend(nrow = 3))
+
+grf_pantans_evolutiu
+```
+
+## Codi
+
+``` r
+reserves_dia <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/gn9e-3qhr/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Dia = col_date(format = "%m/%d/%Y")), locale = locale(grouping_mark = ".")) %>%
+    filter(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)",
+        "Embassament de Sau (Vilanova de Sau)", "Embassament de Susqueda (Osor)")) %>%
+    select(Dia, Estació, `Percentatge volum embassat (%)`) %>%
+    mutate(Any = as.numeric(format(as.Date(Dia), "%Y"))) %>%
+    drop_na()
+
+reserves_any <- reserves_dia %>% 
+    group_by(Any, Estació) %>% # <1>
+    summarize(embassada_panta_pcnt = mean(`Percentatge volum embassat (%)`)) %>%
+    mutate(embassada_panta_pcnt = round(embassada_panta_pcnt, 1))
+
+grf_pantans_evolutiu <- reserves_any %>%
+    ggplot() + geom_line_interactive(aes(x = Any, y = embassada_panta_pcnt,
+    color = Estació)) + aes(tooltip = embassada_panta_pcnt, data_id = embassada_panta_pcnt) +
+    theme_minimal() + theme(legend.position = "bottom") + guides(color = guide_legend(nrow = 3))
+    
+grf_pantans_evolutiu
+```
+
+1.  El group_by()...summarize() ens permet passar de dades diàries a mensuals per a cada embasssament
+:::
+
+## 4.1.2. Transformacions per equiparar els àmbits territorials: els embassaments
+
+Com es veu, l'àmbit territorial d'aquesta primera VI no és coincident amb la de la VD. Allí teníem consums per comarques i aquí trobem els volums de reserves en cada embassament. Això ens obligarà a transformacions de totes dues variables per poder vincular-les en un àmbit territorial comú que ens permeti fer-ne un modelatge. Extreurem subsets per a àrees territorials que agrupin comarques clarament dependents d'un subsistema concret d'embassaments. S'han definit dues zones:
+
++----------------------+------------------------+-------------------------------------+
+| Nom de la Zona       | Comarques que compren  | Embassaments que compren            |
++======================+========================+=====================================+
+| Bages-Llobregat      | Bages i Baix Llobregat | Llosa del Cavall, Sant Ponç, Baells |
++----------------------+------------------------+-------------------------------------+
+| Gironès-Baix Empordà | Gironès i Baix Empordà | Sau i Susqueda                      |
++----------------------+------------------------+-------------------------------------+
+
+Per a definir aquestes equivalències territorials s'ha utilitzat el següent mapa publicat en [aquesta web](https://aca.gencat.cat/ca/laigua/infraestructures/preses-i-embassaments/index.html) de l'Agència Catalana de l'Aigua:
+
+<iframe src="https://drive.google.com/file/d/1TlewKAjb4SyB-nJA6kRrcCWuuJT4s9eL/preview" width="640" height="480" allow="autoplay"></iframe>
+
+Al codi de la següent pestanya dreta s'hi trobaran les operacions realitzades per aconseguir aquestes transformacions. El fet que haguem d'agregar percentatges d'ocupació de pantans amb capacitats molt diferents ens obliga a ponderar aquesta mitjana de reserves, en aquest cas amb la variable Volum embassat (hm3). El dataset resultant es visualitza en aquesta taula:
+
+```{r}
+ba <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/gn9e-3qhr/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Dia = col_date(format = "%m/%d/%Y")), locale = locale(grouping_mark = ".")) %>%
+    filter(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)",
+        "Embassament de Sau (Vilanova de Sau)", "Embassament de Susqueda (Osor)")) %>%
+    select(Dia, Estació, `Volum embassat (hm3)`, `Percentatge volum embassat (%)`) %>%
+    mutate(Any = as.numeric(format(as.Date(Dia), "%Y"))) %>%
+    mutate(Zona = case_when(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)") ~
+        "Bages-Baix Llobregat", Estació %in% c("Embassament de Sau (Vilanova de Sau)",
+        "Embassament de Susqueda (Osor)") ~ "Gironès-Baix Empordà", TRUE ~
+        NA_character_))
+```
+
+```{r}
+bb <- ba %>%
+    group_by(Any, Estació, Zona) %>%
+    summarize(embassada_panta_pcnt = mean(`Percentatge volum embassat (%)`),
+        volum_agregat_any = sum(`Volum embassat (hm3)`)) %>%
+    mutate(embassada_panta_pcnt = round(embassada_panta_pcnt, 1))
+```
+
+```{r}
+bc <- ba %>%
+group_by(Any, Zona) %>%
+  summarize(embassada_zona = weighted.mean(`Percentatge volum embassat (%)`,`Volum embassat (hm3)`)) %>%
+  mutate(embassada_zona = round(embassada_zona, 1)) %>%
+ungroup()  %>%
+  na.omit()
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+bc %>%
+    gt() %>%
+    cols_width(starts_with("embassada_") ~ px(250), ) %>%
+    gt_color_rows(embassada_zona, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+ba <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/gn9e-3qhr/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Dia = col_date(format = "%m/%d/%Y")), locale = locale(grouping_mark = ".")) %>%
+    filter(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)",
+        "Embassament de Sau (Vilanova de Sau)", "Embassament de Susqueda (Osor)")) %>%
+    select(Dia, Estació, `Volum embassat (hm3)`, `Percentatge volum embassat (%)`) %>%
+    mutate(Any = as.numeric(format(as.Date(Dia), "%Y"))) %>%
+    mutate(Zona = case_when(Estació %in% c("Embassament de la Llosa del Cavall (Navès)",
+        "Embassament de Sant Ponç (Clariana de Cardener)", "Embassament de la Baells (Cercs)") ~
+        "Bages-Baix Llobregat", Estació %in% c("Embassament de Sau (Vilanova de Sau)",
+        "Embassament de Susqueda (Osor)") ~ "Gironès-Baix Empordà", TRUE ~
+        NA_character_))
+
+bb <- ba %>%
+    group_by(Any, Estació, Zona) %>%
+    summarize(embassada_panta_pcnt = mean(`Percentatge volum embassat (%)`), # <1>
+        volum_agregat_any = sum(`Volum embassat (hm3)`)) %>%
+    mutate(embassada_panta_pcnt = round(embassada_panta_pcnt, 1))
+    
+bc <- ba %>%
+group_by(Any, Zona) %>%
+  summarize(embassada_zona = weighted.mean(`Percentatge volum embassat (%)`,`Volum embassat (hm3)`)) %>% # <2>
+  mutate(embassada_zona = round(embassada_zona, 1)) %>%
+ungroup()  %>%
+  na.omit()
+
+bc %>%
+    gt() %>%
+    cols_width(starts_with("embassada_") ~ px(250), ) %>%
+    gt_color_rows(embassada_zona, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+1.  No cal pesar la mitjana que es fa en aquest procés perquè es calcula per a cada pantà individual que sempre tindrà la mateixa capacitat
+2.  En canvi, en aquest pas combinem diversos pantans per extreure dades de Zona. Al ser aquests de capacitats desiguals, sí que hem de pesar el mean
+:::
+
+## 4.1.3. Transformacions per equiparar els àmbits territorials: els consums domèstics d'aigua
+
+Fem un procés semblant a l'anterior per a transformar les dades de la nostra VD (el consum d'aigua que hem vist abans desglossat per comarques) a les esmentades grans zones. El detall de codi a remarcar en aquest cas és la ponderació per nombre d'habitants (variable Població), ja què estem fent mitjanes de comarques amb nombres molts diferents d'empadronats. El dataset resultat tindria el següent aspecte:
+
+```{r}
+aa <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Any = col_integer(), 
+        `Codi comarca` = col_integer(), Comarca = col_skip(), 
+        Població = col_character(), `Domèstic xarxa` = col_skip(), 
+        `Activitats econòmiques i fonts pròpies` = col_skip(), 
+        `Consum domèstic per càpita`= col_double(),
+        Total = col_skip()), locale = locale(decimal_mark = ",", 
+        grouping_mark = ".")) %>%
+    filter(`Codi comarca` %in% c("7", "10", "11", "20")) %>%
+    select(Any, `Codi comarca`, `Consum domèstic per càpita`,
+        Població) %>%
+    mutate(`Consum domèstic per càpita` = round(`Consum domèstic per càpita`, 1))   %>%
+    rename(codicomar = `Codi comarca`, Consum_dom_pc = `Consum domèstic per càpita`) %>%
+    mutate(Població = as.numeric(Població)) %>%
+    mutate(Zona = case_when(codicomar %in% c("7", "11") ~ "Bages-Baix Llobregat",
+        codicomar %in% c("10", "20") ~ "Gironès-Baix Empordà"))
+
+ad <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Any = col_integer(), 
+        `Codi comarca` = col_integer(), Comarca = col_skip(), 
+        Població = col_character(), `Domèstic xarxa` = col_skip(), 
+        `Activitats econòmiques i fonts pròpies` = col_skip(), 
+        `Consum domèstic per càpita`= col_double(),
+        Total = col_skip()), locale = locale(decimal_mark = ",", 
+        grouping_mark = ".")) %>%
+    select(Any, `Codi comarca`, `Consum domèstic per càpita`,
+        Població) %>%
+    mutate(`Consum domèstic per càpita` = round(`Consum domèstic per càpita`, 1))   %>%
+    rename(codicomar = `Codi comarca`, Consum_dom_pc = `Consum domèstic per càpita`) %>%
+    mutate(Població = as.numeric(Població))
+```
+
+```{r}
+ab <- aa %>%
+    select(Any, Zona, Consum_dom_pc, Població) %>%
+    group_by(Any, Zona) %>%
+    summarize(Consum_dom_pc = weighted.mean(Consum_dom_pc, Població)) %>%
+    mutate(Consum_dom_pc = round(Consum_dom_pc, 1))   %>%
+    ungroup()
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+ab %>%
+    gt() %>%
+    cols_width(starts_with("consum_") ~ px(250), ) %>%
+    gt_color_rows(Consum_dom_pc, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+aa <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Any = col_integer(), 
+        `Codi comarca` = col_integer(), Comarca = col_skip(), 
+        Població = col_character(), `Domèstic xarxa` = col_skip(), 
+        `Activitats econòmiques i fonts pròpies` = col_skip(), 
+        `Consum domèstic per càpita`= col_double(),
+        Total = col_skip()), locale = locale(decimal_mark = ",", 
+        grouping_mark = ".")) %>%
+    filter(`Codi comarca` %in% c("7", "10", "11", "20")) %>%
+    select(Any, `Codi comarca`, `Consum domèstic per càpita`,
+        Població) %>%
+    mutate(`Consum domèstic per càpita` = round(`Consum domèstic per càpita`, 1))   %>%
+    rename(codicomar = `Codi comarca`, Consum_dom_pc = `Consum domèstic per càpita`) %>%
+    mutate(Població = as.numeric(Població)) %>%
+    mutate(Zona = case_when(codicomar %in% c("7", "11") ~ "Bages-Baix Llobregat", # <1>
+        codicomar %in% c("10", "20") ~ "Gironès-Baix Empordà"))
+
+ad <- read_csv("https://analisi.transparenciacatalunya.cat/api/views/2gws-ubmt/rows.csv?accessType=DOWNLOAD&bom=true&format=true&sorting=true",
+    col_types = cols(Any = col_integer(), 
+        `Codi comarca` = col_integer(), Comarca = col_skip(), 
+        Població = col_character(), `Domèstic xarxa` = col_skip(), 
+        `Activitats econòmiques i fonts pròpies` = col_skip(), 
+        `Consum domèstic per càpita`= col_double(),
+        Total = col_skip()), locale = locale(decimal_mark = ",", 
+        grouping_mark = ".")) %>%
+    select(Any, `Codi comarca`, `Consum domèstic per càpita`,
+        Població) %>%
+    mutate(`Consum domèstic per càpita` = round(`Consum domèstic per càpita`, 1))   %>%
+    rename(codicomar = `Codi comarca`, Consum_dom_pc = `Consum domèstic per càpita`) %>%
+    mutate(Població = as.numeric(Població)) # <2>
+    
+ab <- aa %>%
+    select(Any, Zona, Consum_dom_pc, Població) %>%
+    group_by(Any, Zona) %>%
+    summarize(Consum_dom_pc = weighted.mean(Consum_dom_pc, Població)) %>% # <3>
+    mutate(Consum_dom_pc = round(Consum_dom_pc, 1))  %>%
+    ungroup()
+
+ab %>%
+    gt() %>%
+    cols_width(starts_with("consum_") ~ px(250), ) %>%
+    gt_color_rows(Consum_dom_pc, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+1.  Aquest procés incorpora un case_when() per agrupar els consums domèstics per grans zones supracomarcals
+2.  Mateix procés que l'anterior però mantenim les dades amb desagregació comarcal (per tant, sense case_when())
+3.  Mitjana pesada per població perquè no totes les comarques que integren una Zona són iguals
+:::
+
+## 4.1.4. Fusionar les dades per zones de consum d’aigua amb les del nivell dels embassaments
+
+Ja tenim totes dues variables en registres que representen cadascuna de les diferents combinacions de zona i any. Ara cal ajuntar aquests dos datasets en un únic per poder modelar. Això ens restringirà la sèrie històrica del nivell d'embassaments (inicialment disponible i carregada des del 2.000) per equiparar-la a la dels consums (només disponible a partir del 2.012)
+
+```{r}
+joined_consums_ebassaments <- left_join(ab, bc, by = c("Any", "Zona")) %>%
+    filter(!is.na(Any) & !is.na(Zona) & !is.na(embassada_zona) & !is.na(Consum_dom_pc))
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+joined_consums_ebassaments %>%
+    gt() %>%
+    cols_width(starts_with("c") ~ px(214), ) %>%
+    gt_color_rows(Consum_dom_pc:embassada_zona, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+joined_consums_ebassaments <- left_join(ab, bc, by = c("Any", "Zona")) %>%
+    filter(!is.na(Any) & !is.na(Zona) & !is.na(embassada_zona) & !is.na(Consum_dom_pc))
+
+joined_consums_ebassaments %>%
+    gt() %>%
+    cols_width(starts_with("c") ~ px(214), ) %>%
+    gt_color_rows(Consum_dom_pc:embassada_zona, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+:::
+
+## 4.1.5. Els consums domèstics d'aigua davallen amb les baixades de les reserves als pantans?
+
+Estem en condicions, doncs, de posar a prova la nostra primera hipòtesi. Definim el model lm i el representem gràficament. Com veiem, la realitat no està massa d'acord amb la nostra hipòtesi. De fet la relació sembla totalment inversa: quan menys aigua tenim als pantans és quan més consum fem d'aigua domèstica.
+
+```{r}
+model1 <- lm(Consum_dom_pc ~ embassada_zona, data = joined_consums_ebassaments)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model1 <- lm(Consum_dom_pc ~ embassada_zona, data = joined_consums_ebassaments)
+
+ggplot(model1, aes(x = embassada_zona, y = Consum_dom_pc)) + geom_point() +
+    geom_smooth(method = "lm", se = TRUE)
+```
+
+## Codi
+
+``` r
+model1 <- lm(Consum_dom_pc ~ embassada_zona, data = joined_consums_ebassaments)
+
+ggplot(model1, aes(x = embassada_zona, y = Consum_dom_pc)) + geom_point() +
+    geom_smooth(method = "lm", se = TRUE)
+```
+:::
+
+Si ens mirem més antentament el gràfic anterior, però, veiem que sembla haver-hi dos grups que probablement coincidiran amb les dues zones abans definides. Si les incorporem com a tercer paràmetre del model i el grafiquem, veiem que efectivament això és així. En tot cas, ens queden dues rectes amb pendents lleugerament diferents però molt planes totes dues. Està clar que, en ambdós territoris considerats, el nivell dels pantans condiciona poc els consums d'aigua domèstica. Per tant, ja no entrem a analitzar el model de regressió i passem a explorar altres possibles explicacions.
+
+```{r}
+model1_5 <- lm(Consum_dom_pc ~ embassada_zona + Zona, data = joined_consums_ebassaments)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model1_5 <- lm(Consum_dom_pc ~ embassada_zona, data = joined_consums_ebassaments)
+
+ggplot(joined_consums_ebassaments, aes(x = embassada_zona, y = Consum_dom_pc, color = Zona)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = c("red", "blue"), name = "Zona") +
+  theme(legend.position="bottom")
+```
+
+## Codi
+
+``` r
+model1_5 <- lm(Consum_dom_pc ~ embassada_zona, data = joined_consums_ebassaments)
+
+ggplot(joined_consums_ebassaments, aes(x = embassada_zona, y = Consum_dom_pc, color = Zona)) + 
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE) +
+  scale_color_manual(values = c("red", "blue"), name = "Zona") +
+  theme(legend.position="bottom")
+```
+:::
+
+## 4.2. El nivell de renda
+
+Tal vegada el consum d'aigua dels territoris no depengui tant de les seves reserves com del perfil social mitjà dels seus consumidors a cada zona. Operativitzarem aquest darrer concepte amb la Renda Familiar Bruta per habitant en milers d'euros. Al no tenir el condicionant dels pantans i la seva correspondència amb conques territorials, en lo successiu ja podrem treball amb totes les comarques com a unitats d'anàlisi. Per tant, en el que segueix, es compararan territoris.
+
+També començarem per descarregar el dataset corresponent del repositori presentat a la taula inicial. Ajuntem aquest dataset amb el dels polígons cartogràfics comarcals. Per al 2022, obtenim un mapa de distribució de renda amb format semblant a l'anterior. Un cop més, voluntat purament il·lustrativa: Catalunya és prou desigual en distribució territorial de la renda.
+
+```{r}
+renda_comarques <- read_delim("https://www.idescat.cat/pub/?id=rfdbc&n=13301&by=com&lang=es&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(Codi = col_integer(),
+        Literal = col_character(), `RFDB milers d'euros` = col_skip(),
+        `RFDB per habitant. Índex Catalunya = 100` = col_skip(), `RFDB per habitant. Milers d'euros` = col_number()),
+    locale = locale(decimal_mark = ",", grouping_mark = "."), trim_ws = TRUE,
+    skip = 9) %>%
+    rename(codicomar = 1, nomcomar = 2, Renda = 3)
+renda_comarques$Any <- 2022
+```
+
+```{r}
+renda_comarques_polig <- left_join(renda_comarques, poligons_comarques,
+    by = "codicomar") %>%
+    filter(!is.na(codicomar)) %>%
+    select(-capcomar, -areac5000, -nomcomar.y) %>%
+    rename(nomcomar = nomcomar.x)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+renda_comarques_polig_gr <- renda_comarques_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = Renda,
+      y = reorder(nomcomar, Renda),
+      size = 0.5)) +
+  aes(
+      tooltip = Renda,
+      data_id = codicomar
+    ) +
+ theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(renda_comarques_polig$Renda), linetype = "dashed", color = "red")
+
+renda_comarques_polig_map <- renda_comarques_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Renda)) +
+  aes(
+      tooltip = Renda,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(renda_comarques_polig_gr, renda_comarques_polig_map)
+  )
+```
+
+## Codi
+
+``` r
+renda_comarques <- read_delim("https://www.idescat.cat/pub/?id=rfdbc&n=13301&by=com&lang=es&f=ssv",  # <1>
+    delim = ";", escape_double = FALSE, col_types = cols(Codi = col_integer(),
+        Literal = col_character(), `RFDB milers d'euros` = col_skip(),
+        `RFDB per habitant. Índex Catalunya = 100` = col_skip(), `RFDB per habitant. Milers d'euros` = col_number()),
+    locale = locale(decimal_mark = ",", grouping_mark = "."), trim_ws = TRUE,
+    skip = 9) %>%
+    rename(codicomar = 1, nomcomar = 2, Renda = 3)
+renda_comarques$Any <- 2022 # <2>
+
+renda_comarques_polig <- left_join(renda_comarques, poligons_comarques, # <3>
+    by = "codicomar") %>%
+    filter(!is.na(codicomar)) %>%
+    select(-capcomar, -areac5000, -nomcomar.y) %>%
+    rename(nomcomar = nomcomar.x)
+
+renda_comarques_polig_gr <- renda_comarques_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = Renda,
+      y = reorder(nomcomar, Renda),
+      size = 0.5)) +
+  aes(
+      tooltip = Renda,
+      data_id = codicomar
+    ) +
+ theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(renda_comarques_polig$Renda), linetype = "dashed", color = "red")
+
+renda_comarques_polig_gr <- renda_comarques_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = Renda,
+      y = reorder(nomcomar, Renda),
+      size = 0.5)) +
+  aes(
+      tooltip = Renda,
+      data_id = codicomar
+    ) +
+ theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(renda_comarques_polig$Renda), linetype = "dashed", color = "red")
+
+renda_comarques_polig_map <- renda_comarques_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Renda)) +
+  aes(
+      tooltip = Renda,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(renda_comarques_polig_gr, renda_comarques_polig_map)
+  )
+```
+
+1.  Per a obtenir la url dels .csv en els repositoris de l'IDESCAT: Descarregar -\> confirmar -\> botó dret del mouse -\> Copia l'adreça de l'enllaç
+2.  Afegim un camp Any amb valor fix 2022 perquè ens facilitarà la fusió amb altres datasets que sí tenen aquest mateix camp amb diversos valors
+3.  Fusionem el dataset de renda amb el de polígons comarcals per poder fer el mapa
+:::
+
+## 4.2.1. Fusionar les dades de consum d'aigua amb les de renda
+
+```{r}
+joined_consums_renda <- left_join(ad, renda_comarques, by = ("codicomar")) %>%
+    filter(Any.x == 2022) %>%
+    select(-Any.y, -Any.x, -Població) %>%
+    relocate(Consum_dom_pc, .after = last_col()) %>%
+    na.omit()
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+joined_consums_renda %>%
+    gt() %>%
+    cols_width(starts_with("Re") ~ px(220), ) %>%
+    gt_color_rows(Renda:Consum_dom_pc, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+joined_consums_renda <- left_join(ad, renda_comarques, by = ("codicomar")) %>%
+    filter(Any.x == 2022) %>%
+    select(-Comarca, -Any.y, -Any.x, -Població) %>%
+    relocate(Consum_dom_pc, .after = last_col()) %>%  # <1>
+    na.omit()
+ 
+joined_consums_renda %>%
+    gt() %>%
+    cols_width(starts_with("Re") ~ px(220), ) %>%
+    gt_color_rows(Renda:Consum_dom_pc, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+1.  Canviem alguna columna de lloc perquè estiguin contigües totes les numèriques. Això ens facilitarà "pintar-les" segons valor amb el gt()
+:::
+
+## 4.2.2. El consum domèstic d'aigua creix amb el nivell de renda?
+
+Aquesta seria, de fet, la nostra segona hipòtesi. Com en el cas anterior fem un exploratori gràfic previ del lm:
+
+```{r}
+model2 <- lm(Consum_dom_pc ~ Renda, data = joined_consums_renda)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+ggplot(model2, aes(x = Renda, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+
+## Codi
+
+``` r
+model2 <- lm(Consum_dom_pc ~ Renda, data = joined_consums_renda)
+
+ggplot(model2, aes(x = Renda, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+:::
+
+Tampoc anem bé per aquí: la línia és bastant plana, la qual cosa denota que la renda de les comarques condiciona poc el seu consum d'aigua. A més, el poc que ho fa és en sentit invers a la hipòtesi plantejada. Següent hipòtesi.
+
+## 4.3. Les temperatures mitjanes anuals
+
+Veiem abans que el consum d'aigua creixia quan les reserves dels embassament baixaven. Això anava en sentit contrari a la nostra hipòtesi i, d'entrada, sembla poc intuïtiu. Tal vegada hi hagi terceres variables confusores que ens expliquin tan peculiar comportament? Potser una d'elles és la temperatura de cada zona: a entorns més calorosos, més evaporació d'aigua dels pantans i més consum domèstic, típicament en usos com el reg de jardins o quantitat de piscines omplertes. Passem, per tant, a explorar aquesta "hipòtesi tèrmica" prenent com a indicador de VI les temperatures mitjanes anuals de cada comarca.
+
+Comencem, com sempre, amb la descàrrega i transformació de dades (codi a la pestanya del costat) que presenta aquesta distribució territorial:
+
+```{r}
+temp_mitj_comarq <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=15192&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(...1 = col_character(),
+        Estacions = col_skip(), `Altitud (m)` = col_skip(), `Mitjana anual` = col_double(),
+        `Mitjana de màximes` = col_skip(), `Mitjana de mínimes` = col_skip(),
+        `Màxima absoluta` = col_skip(), `Mínima absoluta` = col_skip()),
+    locale = locale(decimal_mark = ",", grouping_mark = "."), trim_ws = TRUE,
+    skip = 7) %>%
+    rename(nomcomar = 1, temperatura_mitj_any = 2)
+temp_mitj_comarq$nomcomar[temp_mitj_comarq$nomcomar == "Aran"] <- "Val d'Aran"
+temp_mitj_comarq$Any <- 2022
+```
+
+```{r}
+temp_mitj_comarq_polig <- left_join(temp_mitj_comarq, poligons_comarques,
+    by = "nomcomar") %>%
+    select(-capcomar, -areac5000) %>%
+    na.omit()
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+temp_mitj_comarq_graph <- temp_mitj_comarq_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = temperatura_mitj_any,
+      y = reorder(nomcomar, temperatura_mitj_any),
+      size = 0.5)) +
+ aes(
+      tooltip = temperatura_mitj_any,
+      data_id = codicomar
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(temp_mitj_comarq_polig$temperatura_mitj_any), linetype = "dashed", color = "red")
+
+temp_mitj_comarq_map <- temp_mitj_comarq_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = temperatura_mitj_any)) +
+  aes(
+      tooltip = temperatura_mitj_any,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(temp_mitj_comarq_graph, temp_mitj_comarq_map)
+  )
+```
+
+## Codi
+
+``` r
+temp_mitj_comarq <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=15192&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(...1 = col_character(),
+        Estacions = col_skip(), `Altitud (m)` = col_skip(), `Mitjana anual` = col_double(),
+        `Mitjana de màximes` = col_skip(), `Mitjana de mínimes` = col_skip(),
+        `Màxima absoluta` = col_skip(), `Mínima absoluta` = col_skip()),
+    locale = locale(decimal_mark = ",", grouping_mark = "."), trim_ws = TRUE,
+    skip = 7) %>%
+    rename(nomcomar = 1, temperatura_mitj_any = 2)
+temp_mitj_comarq$nomcomar[temp_mitj_comarq$nomcomar == "Aran"] <- "Val d'Aran" # <1>
+temp_mitj_comarq$Any <- 2022
+
+temp_mitj_comarq_polig <- left_join(temp_mitj_comarq, poligons_comarques,
+    by = "nomcomar") %>% # <2>
+    select(-capcomar, -areac5000) %>%
+    na.omit()
+
+temp_mitj_comarq_graph <- temp_mitj_comarq_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = temperatura_mitj_any,
+      y = reorder(nomcomar, temperatura_mitj_any),
+      size = 0.5)) +
+ aes(
+      tooltip = temperatura_mitj_any,
+      data_id = codicomar
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(), legend.position = "none") +
+  geom_vline(xintercept = mean(temp_mitj_comarq_polig$temperatura_mitj_any), linetype = "dashed", color = "red")
+
+temp_mitj_comarq_map <- temp_mitj_comarq_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = temperatura_mitj_any)) +
+  aes(
+      tooltip = temperatura_mitj_any,
+      data_id = codicomar
+    ) +
+  coord_sf(crs = 4269) +
+  theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(temp_mitj_comarq_graph, temp_mitj_comarq_map)
+  )
+```
+
+1.  En la variable nomcomar, canviem de nom el valor "Val d'Aran" perquè no coincideix amb l'altre dataset que usarem aquí on l'anomenen "Aran"
+2.  En relació al comentari 1, no ens queda més remei que fer aquests joins amb la variable alfanumèrica nomcomar perquè en un dels datasets no hi ha codis comarcals
+:::
+
+## 4.3.1. Fusionar les dades de consum d'aigua amb les temperatures
+
+Un cop més, per poder modelar haurem de tenir les dues variables de treball en un mateix dataset:
+
+```{r}
+joined_consums_temp <- left_join(joined_consums_renda, temp_mitj_comarq,
+    by = ("nomcomar")) %>%
+    filter(!is.na(Any), !is.na(temperatura_mitj_any)) %>%
+    select(-Any)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+joined_consums_temp %>%
+    select(-Renda) %>%
+    gt() %>%
+    cols_width(starts_with("Consum_") ~ px(220), ) %>%
+    gt_color_rows(Consum_dom_pc:temperatura_mitj_any, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+joined_consums_temp <- left_join(joined_consums_renda, temp_mitj_comarq,
+    by = ("nomcomar")) %>%
+    filter(!is.na(Any), !is.na(temperatura_mitj_any)) %>%
+    select(-Any)
+    
+joined_consums_temp %>%
+    select(-Renda) %>%
+    gt() %>%
+    cols_width(starts_with("Consum_") ~ px(220), ) %>%
+    gt_color_rows(Consum_dom_pc:temperatura_mitj_any, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+:::
+
+## 4.3.2. El volum de consum domèstic d'aigua creix amb la temperatura mitjana anual de cada comarca?
+
+Tal i com veien en el següent gràfic, també aquí tenim una associació inversa a la prevista per la nostra hipòtesi: a llocs més calorosos sembla consumir-se menys (i no pas més) d'aigua domèstica per unitat domiciliària. Altra hipòtesi descartada. Seguim
+
+```{r}
+model3 <- lm(Consum_dom_pc ~ temperatura_mitj_any, data = joined_consums_temp)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+ggplot(model3, aes(x = temperatura_mitj_any, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+
+## Codi
+
+``` r
+model3 <- lm(Consum_dom_pc ~ temperatura_mitj_any, data = joined_consums_temp)
+
+ggplot(model3, aes(x = temperatura_mitj_any, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+:::
+
+## 4.4. Les precipitacions mitjanes anuals
+
+Anem per a una altra variable climatològica. Aquesta està relacionaria amb la hipòtesi del "nivell d'aigua disponible" que abans mesuràvem amb les reserves dels pantans. Ara mirarem si una humitat alta de la comarca (mesurada a partir de les seves precipitacions mitjanes anuals en mm) incentiva a un major consum domiciliari d'aigua. Com sempre, d'entrada presentem un mapa i gràfic descriptius al respecte, referits al darrer exercici disponible (2022)
+
+```{r}
+prec_mitj_comarq <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=16342&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(Estacions = col_skip(),
+        `Altitud (m)` = col_skip(), `Precipitació total (mm)` = col_double(),
+        `Humitat relativa mitjana (%)` = col_skip(), `Vent. Velocitat mitjana (m/s)` = col_skip(),
+        `Vent. Direcció dominant` = col_skip()), locale = locale(decimal_mark = ",",
+        grouping_mark = "."), trim_ws = TRUE, skip = 8) %>%
+    rename(nomcomar = 1, Precipitacio_mitjana_anual = 2)
+
+prec_mitj_comarq$nomcomar[prec_mitj_comarq$nomcomar == "Aran"] <- "Val d'Aran"
+prec_mitj_comarq$Any <- 2022
+```
+
+```{r}
+prec_mitj_comarq_polig <- left_join(prec_mitj_comarq, poligons_comarques,
+    by = "nomcomar") %>%
+    select(-capcomar, -areac5000) %>%
+    na.omit()
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+prec_mitj_comarq_graph <- prec_mitj_comarq_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = Precipitacio_mitjana_anual,
+      y = reorder(nomcomar, Precipitacio_mitjana_anual),
+      size = 0.5)) +
+   aes(
+      tooltip = Precipitacio_mitjana_anual,
+      data_id = codicomar
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(),  legend.position = "none") +
+  geom_vline(xintercept = mean(prec_mitj_comarq_polig$Precipitacio_mitjana_anual), linetype = "dashed", color = "red") 
+
+prec_mitj_comarq_map <- prec_mitj_comarq_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Precipitacio_mitjana_anual)) +
+  aes(
+      tooltip = Precipitacio_mitjana_anual,
+      data_id = codicomar
+    ) +
+   coord_sf(crs = 4269) +
+   theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(prec_mitj_comarq_graph, prec_mitj_comarq_map)
+  )
+```
+
+## Codi
+
+``` r
+prec_mitj_comarq <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=16342&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(Estacions = col_skip(),
+        `Altitud (m)` = col_skip(), `Precipitació total (mm)` = col_double(),
+        `Humitat relativa mitjana (%)` = col_skip(), `Vent. Velocitat mitjana (m/s)` = col_skip(),
+        `Vent. Direcció dominant` = col_skip()), locale = locale(decimal_mark = ",",
+        grouping_mark = "."), trim_ws = TRUE, skip = 8) %>%
+    rename(nomcomar = 1, Precipitacio_mitjana_anual = 2) # <1>
+prec_mitj_comarq$nomcomar[prec_mitj_comarq$nomcomar == "Aran"] <- "Val d'Aran"
+prec_mitj_comarq$Any <- 2022
+
+prec_mitj_comarq_polig <- left_join(prec_mitj_comarq, poligons_comarques,
+    by = "nomcomar") %>%
+    select(-capcomar, -areac5000)%>%
+    na.omit()
+
+prec_mitj_comarq_graph <- prec_mitj_comarq_polig %>%
+ ggplot() +
+  geom_point_interactive(aes(
+      x = Precipitacio_mitjana_anual,
+      y = reorder(nomcomar, Precipitacio_mitjana_anual),
+      size = 0.5)) +
+   aes(
+      tooltip = Precipitacio_mitjana_anual,
+      data_id = codicomar
+    ) +
+  theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(),  legend.position = "none") +
+  geom_vline(xintercept = mean(prec_mitj_comarq_polig$Precipitacio_mitjana_anual), linetype = "dashed", color = "red")
+
+prec_mitj_comarq_map <- prec_mitj_comarq_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = Precipitacio_mitjana_anual)) +
+  aes(
+      tooltip = Precipitacio_mitjana_anual,
+      data_id = codicomar
+    ) +
+   coord_sf(crs = 4269) +
+   theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+girafe(
+  ggobj = plot_grid(prec_mitj_comarq_graph, prec_mitj_comarq_map)
+  )
+```
+
+1.  Reanomenem les variables a posteriori segons la seva posició perquè no ens ha deixat fer-ho en l'script de càrrega pròpiament dit
+:::
+
+## 4.4.1. Fusionar les dades de consum d'aigua amb les del nivell pluviomètric
+
+```{r}
+joined_preciptacio <- left_join(joined_consums_temp, prec_mitj_comarq,
+    by = c("nomcomar")) %>%
+    select(-Renda, -temperatura_mitj_any, -Any)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+joined_preciptacio %>%
+    gt() %>%
+    cols_width(starts_with("cod") ~ px(110), ) %>%
+    gt_color_rows(Consum_dom_pc:Precipitacio_mitjana_anual, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+joined_preciptacio <- left_join(joined_consums_temp, prec_mitj_comarq,
+    by = c("nomcomar")) %>%
+    select(-Renda, -temperatura_mitj_any, -Any)
+
+joined_preciptacio %>%
+    gt() %>%
+    cols_width(starts_with("cod") ~ px(110), ) %>%
+    gt_color_rows(Consum_dom_pc:Precipitacio_mitjana_anual, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+:::
+
+## 4.4.2. El consum domiciliari d'aigua creix amb la precipitació mitjana anual? Exploració gràfica prèvia
+
+El gràfic ens mostra una línia bastant poc inclinada, és a dir que el consum depèn poc de la pluviometria de la zona... però almenys té l'orientació/sentit que esperava la nostra hipòtesi: a més pluja, més consum d'aigua. Així que (sense massa esperances) anem a demanar els indicadors de la regressió linial.
+
+```{r}
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+ggplot(model4, aes(x = Precipitacio_mitjana_anual, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+
+## Codi
+
+``` r
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+
+ggplot(model4, aes(x = Precipitacio_mitjana_anual, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+:::
+
+## 4.4.3. El consum domiciliari d'aigua creix amb la precipitació mitjana anual? Interpretació del lm()
+
+Amb la funció performance::performance() podem obtenir indicadors de la bondat del model lm i els paràmetres en què s'haurien de situar. Concretament:
+
+-   Comprovació a posteriori de la capacitat predictiva
+
+-   Homogeneïtat de la variància
+
+-   Normalitat dels residus
+
+-   Linialitat del model
+
+-   Observacions influents
+
+Com podem veure en el report següent, tots els paràmetres semblen acceptables, potser exceptuant un excés de kurtosis
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+check_model(model4)
+```
+
+## Codi
+
+``` r
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+check_model(model4)
+```
+:::
+
+Passem ja a demanar els estadístics del model. Experimetarem al respecte amb els paquets {stargazer} i {gtsummary}. Òbviament els seus resultats són coincidents però, com veurem, no reporten exactament els mateixos estadístics.
+
+::: panel-tabset
+## Objecte
+
+```{r}
+stargazer(model4, type = "text")
+```
+
+## Codi
+
+``` r
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+stargazer(model4, type = "text")
+```
+:::
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model4 %>%
+    tbl_regression(pvalue_fun = ~style_pvalue(.x, digits = 2), ) %>%
+    bold_p(t = 0.1) %>%
+    bold_labels() %>%
+    italicize_levels()
+```
+
+## Codi
+
+``` r
+model4 <- lm(Consum_dom_pc ~ Precipitacio_mitjana_anual, data = joined_preciptacio)
+
+model4 %>%
+    tbl_regression(pvalue_fun = ~style_pvalue(.x, digits = 2), ) %>%
+    bold_p(t = 0.1) %>%
+    bold_labels() %>%
+    italicize_levels()
+```
+:::
+
+En una regressió linial, els coeficients (Beta) s'interpreten com una pendent. En el nostre cas és de 0.06 i una desviació estàndard de 0.049. Això vol dir que per cada unitat d'increment de precipitació mitjana anual (mm), el consum domèstic per càpita augmenta en 0.06 unitats (litres/persona/dia)
+
+La constant o intercept indica el valor de la variable dependent "Consum_dom_pc" quan la variable independent "Precipitacio_mitjana_anual" és zero. En aquest cas no té massa sentit perquè (de moment) encara no tenim comarques on no plogui en un any sencer.
+
+El coeficient de determinació (R2) és de 0.043 i l'R2 ajustat és de 0.018 . Això vol dir que el model només explica el 4.3% de la variabilitat del consum domèstic d'aigua a les comarques catalanes. Per tant, no és un model gens robust i hi ha altres factors que influeixen en aquest consum.
+
+La sortida del paquet {gtsummary} ens mostra un interval de confiança del 95% que va des de -0.04 a 0.16 i un valor p de 0.20. Això vol dir que la relació positiva entre les dues variables no és significativa. Passem, per tant, a una altra hipòtesi.
+
+## 4.5. Els preus de l'abastiment d'aigua
+
+Entrem ja en l'últim dels possibles factors considerats: un preu elevat de l'abastiment domiciliari d'aigua (en €\_m3 en el nostre cas) potser en desincentiva el seu consum, de tal forma que se'n gasta menys.
+
+A nivell de ETL, aquest té la peculiaritat que el dataset original ve amb un desglossament local, amb la qual cosa hem hagut d'agregar les dades comarcalment amb les corresponents mitjanes ponderades, ja que no tots els municipis d'una comarca tenen el mateix nombre d'habitants.
+
+```{r}
+url <- "https://aca.gencat.cat/web/.content/10_ACA/L_Observatori_preu_aigua/03-Preu-per-municipis-i-evolucio/Preus_per_municipi_ca.xlsx"
+invisible(GET(url, write_disk(tf <- tempfile(fileext = ".xlsx"))))
+
+preu_aigua_municipis <- read_excel(tf, 2L) %>%
+    slice(11:n()) %>%
+    select(-c(4:6)) %>%
+    rename(Codi = 1, Municipi = 2, Comarca = 3, `Preu_€_m3` = 4) %>%
+    mutate(`Preu_€_m3` = as.double(`Preu_€_m3`)) %>%
+    rename_all(~ifelse(. == "", paste0("V", seq_along(.)), .)) %>%
+    slice(-1:-10)
+```
+
+```{r}
+Poblaci_municip <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=15903&f=ssv",
+    delim = ";", escape_double = FALSE, col_types = cols(Municipi = col_skip(),
+        Codi = col_character(), `Altitud (m)` = col_skip(), `Superfície (km²)` = col_skip(),
+        Població = col_integer()), trim_ws = TRUE, skip = 8) %>%
+    rename(nomcomar = Comarca)
+```
+
+```{r}
+preu_aigua_pobla_municipis <- left_join(preu_aigua_municipis %>% select(Codi,`Preu_€_m3`), Poblaci_municip, by = "Codi")
+```
+
+```{r}
+preu_aigua_comarca <- preu_aigua_pobla_municipis %>%
+    group_by(nomcomar) %>%
+    summarize(`preu_aigua_€_m3` = round(weighted.mean(`Preu_€_m3`,
+        Població), 3))
+preu_aigua_comarca$Any <- 2022
+```
+
+```{r}
+preu_aigua_comarca_polig <- left_join(preu_aigua_comarca, poligons_comarques,
+    by = "nomcomar") %>%
+    filter(!is.na(nomcomar)) %>%
+    select(-capcomar, -areac5000)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+preu_aigua_comarca_gr <- preu_aigua_comarca_polig %>%
+    ggplot() + geom_point_interactive(aes(x = `preu_aigua_€_m3`, y = reorder(nomcomar,
+    `preu_aigua_€_m3`), size = 0.5)) + aes(tooltip = `preu_aigua_€_m3`) +
+    theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(),
+        legend.position = "none") + geom_vline(xintercept = mean(preu_aigua_comarca$`preu_aigua_€_m3`),
+    linetype = "dashed", color = "red")
+plot(preu_aigua_comarca_gr)
+```
+
+## Codi
+
+``` r
+url <- "https://aca.gencat.cat/web/.content/10_ACA/L_Observatori_preu_aigua/03-Preu-per-municipis-i-evolucio/Preus_per_municipi_ca.xlsx"
+invisible(GET(url, write_disk(tf <- tempfile(fileext = ".xlsx")))) # <1>
+
+preu_aigua_municipis <- read_excel(tf, 2L) %>%  # <2>
+    slice(11:n()) %>%
+    select(-c(4:6)) %>%
+    rename(Codi = 1, Municipi = 2, Comarca = 3, `Preu_€_m3` = 4) %>%
+    mutate(`Preu_€_m3` = as.double(`Preu_€_m3`)) %>%
+    rename_all(~ifelse(. == "", paste0("V", seq_along(.)), .)) %>%
+    slice(-1:-10)
+
+Poblaci_municip <- read_delim("https://www.idescat.cat/indicadors/?id=aec&n=15903&f=ssv", # <3>
+    delim = ";", escape_double = FALSE, col_types = cols(Municipi = col_skip(),
+        Codi = col_character(), `Altitud (m)` = col_skip(), `Superfície (km²)` = col_skip(),
+        Població = col_integer()), trim_ws = TRUE, skip = 8) %>%
+    rename(nomcomar = Comarca)
+
+preu_aigua_pobla_municipis <- left_join(preu_aigua_municipis %>% select(Codi,`Preu_€_m3`), Poblaci_municip, by = "Codi")
+
+preu_aigua_comarca <- preu_aigua_pobla_municipis %>%
+    group_by(nomcomar) %>%
+    summarize(`preu_aigua_€_m3` = round(weighted.mean(`Preu_€_m3`,
+        Població), 3))
+preu_aigua_comarca$Any <- 2022
+
+preu_aigua_comarca_polig <- left_join(preu_aigua_comarca, poligons_comarques,
+    by = "nomcomar") %>%
+    filter(!is.na(nomcomar)) %>%
+    select(-capcomar, -areac5000)
+
+preu_aigua_comarca_gr <- preu_aigua_comarca_polig %>%
+    ggplot() + geom_point_interactive(aes(x = `preu_aigua_€_m3`, y = reorder(nomcomar,
+    `preu_aigua_€_m3`), size = 0.5)) + aes(tooltip = `preu_aigua_€_m3`) +
+    theme(axis.text.y = element_text(size = 8), axis.title.y = element_blank(),
+        legend.position = "none") + geom_vline(xintercept = mean(preu_aigua_comarca$`preu_aigua_€_m3`),
+    linetype = "dashed", color = "red")
+plot(preu_aigua_comarca_gr)
+```
+
+1.  El prefix invisible() és necessari perquè no ens pinti el resultat del GET() en la sortida html sinó que generi un objecte que després llegeixi el read_excel()
+2.  En relació al comentari 1, aquest procediment és l'únic que he trobat per carregar un .xlsx directament des d'una url d'aquest tipus. Els .csv són més fàcils
+3.  Noti's que aquí estem baixant un dataset de població diferent de l'anterior. Aquell era per comarques i aquest és per municipis que és l'àmbit territorial per al qual tenim les dades originals a pesar.
+:::
+
+::: panel-tabset
+## Objecte
+
+```{r}
+preu_aigua_comarca_polig <- left_join(preu_aigua_comarca, poligons_comarques, by = "nomcomar") %>% 
+  filter(!is.na(nomcomar)) %>% 
+  select (-capcomar , -areac5000) 
+
+preu_aigua_comarca_map <- preu_aigua_comarca_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = `preu_aigua_€_m3`)) +
+  coord_sf(crs = 4269) +
+    theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  aes(tooltip = `preu_aigua_€_m3`) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+plot (preu_aigua_comarca_map)
+```
+
+## Codi
+
+``` r
+preu_aigua_comarca_polig <- left_join(preu_aigua_comarca, poligons_comarques, by = "nomcomar") %>% <1>
+  filter(!is.na(nomcomar)) %>% 
+  select (-capcomar , -areac5000) 
+
+preu_aigua_comarca_map <- preu_aigua_comarca_polig %>%
+  ggplot() +
+  geom_sf_interactive(aes(geometry = geometry, fill = `preu_aigua_€_m3`)) +
+  coord_sf(crs = 4269) +
+    theme(line = element_blank(),  # remove the background, tickmarks, etc
+        axis.text=element_blank(),
+        axis.title=element_blank(),
+        panel.background = element_blank())+
+  scale_fill_gradientn(colours=rev(magma(6))) +
+  aes(tooltip = `preu_aigua_€_m3`) +
+  theme(legend.position = "bottom", legend.text = element_text(size = 5), legend.title.align = 0.5) +
+  labs(fill="")
+
+plot (preu_aigua_comarca_map)
+```
+
+1.  Noti's que aquí no hem pogut relacionar el gràfic i el mapa ni fer-los interactius. Això és perquè no el hem pogut vincular mitjançant codi numèric
+:::
+
+## 4.5.1. Fusionar les dades de consum d'aigua amb les del seu preu
+
+```{r}
+joined_preu_aigua <- left_join(joined_preciptacio, preu_aigua_comarca,
+    by = ("nomcomar")) %>%
+    select(-Precipitacio_mitjana_anual, -Any)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+joined_preu_aigua %>%
+    gt() %>%
+    cols_width(starts_with("nom") ~ px(150), ) %>%
+    gt_color_rows(Consum_dom_pc:`preu_aigua_€_m3`, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+
+## Codi
+
+``` r
+joined_preu_aigua <- left_join(joined_preciptacio, preu_aigua_comarca,
+    by = ("nomcomar")) %>%
+    select(-Precipitacio_mitjana_anual, -Any)
+
+joined_preu_aigua %>%
+    gt() %>%
+    cols_width(starts_with("nom") ~ px(150), ) %>%
+    gt_color_rows(Consum_dom_pc:`preu_aigua_€_m3`, c("white", "#FE3D3D")) %>%
+    opt_interactive()
+```
+:::
+
+## 4.5.2. El volum de consum d'aigua baixa amb l'increment de seus preus? Exploració gràfica prèvia
+
+A l'interpretar la sortida gràfica, és important no perdre de vista la nostra hipòtesi. A diferència de totes les anteriors aquesta pressuposa una relació INVERSA entre les dues variables, és a dir, que quan més s'encareix el preu de l'aigua, allò que esperaríem del seu consum és una davallada. El que ens mostra el següent ggplot és que les coses sí semblen anar així. Procedim, per tant, a modelar.
+
+```{r}
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+ggplot(model5, aes(x = `preu_aigua_€_m3`, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+
+## Codi
+
+``` r
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+
+ggplot(model5, aes(x = `preu_aigua_€_m3`, y = Consum_dom_pc)) +
+  geom_point() +
+  geom_smooth(method = "lm", se = TRUE)
+```
+:::
+
+## 4.5.3. El volum de consum d'aigua baixa amb l'increment dels seus preus? Interpretació del lm()
+
+Com abans, primer procedim a comprovar que es donen les condicions d'aplicabilitat d'un regressió linial. La funció performance::performance() ens retorna el report següent, on els paràmetres semblen acceptables amb alguna observació allunyada del residu estandard i (també) algo de kurtosi.
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+check_model(model5)
+```
+
+## Codi
+
+``` r
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+check_model(model5)
+```
+:::
+
+Passem ja a demanar els estadístics del model. En aquesta ocasió ho farem amb la funció summary() i el paquet {gtsummary}.
+
+::: panel-tabset
+## Objecte
+
+```{r}
+summary(model5)
+```
+
+## Codi
+
+``` r
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+summary(model5)
+```
+:::
+
+::: panel-tabset
+## Objecte
+
+```{r}
+model5 %>%
+    tbl_regression(pvalue_fun = ~style_pvalue(.x, digits = 2), ) %>%
+    bold_p(t = 0.1) %>%
+    bold_labels() %>%
+    italicize_levels()
+```
+
+## Codi
+
+``` r
+model5 <- lm(Consum_dom_pc ~ `preu_aigua_€_m3`, data = joined_preu_aigua)
+
+model5 %>%
+    tbl_regression(pvalue_fun = ~style_pvalue(.x, digits = 2), ) %>%
+    bold_p(t = 0.1) %>%
+    bold_labels() %>%
+    italicize_levels()
+```
+:::
+
+El coeficient de la variable independent preu_aigua\_€m3 és de -64 amb una desviació estàndard de 17.66 i un valor p de 0.000788. Això vol dir que hi ha una relació inversa entre les dues variables. Per a cada unitat d'increment del preu de l'aigua (€/m3), el seu consum domèstic per càpita disminueix en 64 unitats (litres/persona/dia)
+
+La constant en aquest cas tampoc no té massa sentit perquè l'abastiment d'aigua mai és totalment gratuït.
+
+El valor p és menor de 0.001, el que indica que la relació entre les dues variables és clarament significativa.
+
+El coeficient de determinació (R2) és de 0.2595 i el R2 ajustat és de 0.24. Això vol dir que el preu explica gairebé el 26% de la variabilitat en consum domèstic d'aigua. Concloent, és un model significatiu i més robust que l'anterior. No obstant això se'ns segueixen escapant factors que influeixen el consum d'aigua però (per ser un exercici acadèmic i a falta de més idees i fonts) ho deixarem aquí.
+
+## 5. Descriptius estadístics de les variables utilitzades
+
+Habitualment això se sol presentar més a l'inici dels informes, en un apartat d'anàlisi exploratòria (EDA) No obstant nosaltres hem anat introduint variables progressivament amb els successius models i és ara que podem ajuntar-les totes en un únic dataset i treure'n els descriptors en una taula també unitària. Començarem per a les variables que hem desglossat a escala comarcal:
+
+```{r}
+joined_consums_renda <- left_join(ad, renda_comarques, by = ("codicomar")) %>%
+    filter(Any.x == 2022) %>%
+    select(-Any.y, -Any.x)
+joined_consums_temp <- left_join(joined_consums_renda, temp_mitj_comarq,
+    by = ("nomcomar")) %>%
+    filter(!is.na(Any), !is.na(temperatura_mitj_any)) %>%
+    select(-Any)
+joined_preciptacio <- left_join(joined_consums_temp, prec_mitj_comarq,
+    by = c("nomcomar")) %>%
+    select(-Any)
+joined_def_comarques <- left_join(joined_preciptacio, preu_aigua_comarca,
+    by = ("nomcomar")) %>%
+    select(-Any)
+```
+
+::: panel-tabset
+## Objecte
+
+```{r}
+report(joined_def_comarques)
+```
+
+## Codi
+
+``` r
+joined_consums_renda <- left_join(ad, renda_comarques, by = ("codicomar")) %>% # <1>
+    filter(Any.x == 2022) %>%
+    select(-Comarca, -Any.y, -Any.x)
+joined_consums_temp <- left_join(joined_consums_renda, temp_mitj_comarq,
+    by = ("nomcomar")) %>%
+    filter(!is.na(Any), !is.na(temperatura_mitj_any)) %>%
+    select(-Any)
+joined_preciptacio <- left_join(joined_consums_temp, prec_mitj_comarq,
+    by = c("nomcomar")) %>%
+    select(-Any)
+joined_def_comarques <- left_join(joined_preciptacio, preu_aigua_comarca,
+    by = ("nomcomar")) %>%
+    select(-Any)
+
+report(joined_def_comarques)
+```
+
+1.  Noti's que els joins són de 2 dataframes. Si se'n volen afegir més, ha de ser un procés incremental
+:::
+
+I seguidament presentarem els descriptius per als datasets que hem agrupat per a zones supracomarcals:
+
+::: panel-tabset
+## Objecte
+
+```{r}
+report(joined_consums_ebassaments) 
+```
+
+## Codi
+
+``` r
+report(joined_consums_ebassaments) 
+```
+:::
+
+Alguns comentaris ràpids sobre les sortides:
+
+-   Les 6 variables que hem usat en el model són numèriques (1 VD i 5 VI) amb la qual cosa es presenta la seva mitjana, mediana, desviació típica, rang d'oscil·lació, Skewness (manca de simetria) i Kurtosis (grau de concentració de la variable en la zona central). Amb aquests indicadors ja podríem valorar la normalitat de les seves distribucions. No obstant, per a una regressió linial, la normalitat que ens interessa controlar no és la de les variables sinó la dels seus residus respecte al model, cosa que ja s'ha presentat en els reports del paquet {performance} per a cada modelatge.
+
+-   El paquet que hem utilitzat per aquesta EDA és {report}, el qual ofereix l'avantatge de retornar també informació sobre les variables categòriques alfanumèriques, que en el nostre cas han estat dues de territorialització (nomcomar i Zona)
+
+## 6. Conclusions
+
+En aquest informe s'ha presentat la distribució territorial de tot un seguit de variables, concretament: el consum domèstic de la xarxa d'aigua mesurat en litres/persona/dia, quantitat d'aigua als embassaments de les conques internes (en % embassat), temperatura mitjana registrada pel observatoris, precipitació total (mm) registrada per comarca, renda familiar disponible bruta territorial per habitant en milers d'euros i preu de l'aigua per municipis (en €/m3). Totes elles presenten una clara heterogeneïtat territorial.
+
+S'han presentat una sèrie de possibles variables explicatives del diferent consum domèstic d'aigua que no han superat l'anàlisi gràfica prèvia, en el sentit que la seva relació amb la VD és inversa a la hipotetitzada. Concretament han estat: la quantitat d'aigua als embassaments, la temperatura mitjana registrada pel observatoris i la renda familiar disponible bruta per habitant, en milers d'euros
+
+La hipòtesi que el consum domiciliari d'aigua creix amb la humitat de cada comarca mesurada en precipitació mitjana anual no s'ajusta a un model de regressió linial de forma prou robusta ni significativa.
+
+La hipòtesi que el volum de consum d'aigua baixa amb l'increment de preus del seu abastiment presenta uns indicadors lm que la fan versemblant i representativa. Però només arriba a explicar el 26% de la variabilitat entre les diferents comarques, amb la qual cosa sembla clar que cal més recerca sobre aquest tema a Catalunya.
+
+Aconseguir arribar a una hipòtesi que tan sols mereixi passar de l'exploració prèvia per a ser modelada, implica molts intents fallits.
+
+## 7. Reproduïbilitat i objectius futurs d'aquest projecte
+
+R és un món viu on els paquets progressen ràpidament i de forma bastant autònoma. Per això és habitual que un codi doni problemes per a ser executat passat un temps o fins i tot per un "contemporani" que tingui instal·lada en la seva màquina una versió dels paquets diferent a la nostra. Una solució simple és el paquet {renv} Amb una única línia de codi al final del projecte et genera al teu directori de treball dos fitxers nous i una carpeta. Els fitxers són un renv.lock que registra la versió de R amb que es va generar el codi, els paquets que has utilitzat, les seves versions i dependències. L'altre arxiu és un .Rprofile que R llegirà automàticament a l'inici. La nova carpeta s'anomena renv. Amb aquests arxius, el teu jo del futur o algú altre podran restaurar la biblioteca que heu utilitzat per a escriure un projecte. Només hauran d'instal·lar {renv} i després utilitzar el fitxer renv.lock que has generat. Més instruccions a la documentació del projecte i [aquí](https://raps-with-r.dev/repro_intro.html). Lamentablement Quarto no m'ha renderitzat correctament aquesta funció, així que tot seguit la deixo comentada en el .qmd i, qui vulgui tenir aquesta "assegurança contra l'obsolescència", simplement l'ha de descomentar i executar individualment el seu chunk de codi.
+
+```{r}
+# renv::init()
+```
+
+::: panel-tabset
+## Codi
+
+``` r
+# renv::init()
+```
+:::
+
+Respecte al contingut del projecte, la propera passa serà òbviament , la seva revisió i correcció d'errades. Amb posterioritat a això, voldria afegir-hi algunes funcionalitats que m'han quedat pendents o he preferit fer amb la versió ja corregida:
+
+-   Polir el codi: organitzar en seqüències de pipes coses que de moment s'han programat amb objectes intermedis per facilitar-ne el control i racionalitzar els noms dels objectes que encara es matinguin
+
+-   Tornar a valorar possibilitats de variables confusores i sinèrgies que es puguin operativitzar amb més regressions múltiples
